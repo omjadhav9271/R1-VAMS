@@ -1,0 +1,503 @@
+% ---------------------------------------------------------------------------
+% Venue-neutral conference manuscript.
+% To retarget: swap \documentclass for the venue template (e.g. aamas.cls,
+% IEEEtran, or sigconf) -- the body text uses no class-specific commands.
+% ---------------------------------------------------------------------------
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[margin=0.85in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+\title{\bfseries A Selection-Conditioned Bias in the Evaluation of\\
+Merit-Based Sortition, and What It Invalidates}
+
+\author{%
+  [Author Name]\\
+  \small [Institution] \\
+  \small \texttt{[email]}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Merit-based sortition selects an active subset of participants in a decentralized
+network by ranking an exponential moving average (EMA) of observed quality, with a
+replacement percentile $P$ controlling how optimistically unobserved participants are
+credited. We report that the quality metric used to evaluate this family of mechanisms
+is biased: it scores the active set \emph{after} selection using the same observations
+that drove the selection, so the recorded value is conditioned on the selection event.
+The resulting bias is proportional to participant turnover and therefore to $P$ itself
+--- the very parameter under study. We measure the bias at $0.108\times$ the per-epoch
+churn rate ($R^2=0.874$), vanishing when churn vanishes.
+
+The consequences are not cosmetic. Under the biased metric the apparent
+quality-optimal percentile is $P^\star\in[70,85]\%$; under an unbiased metric it is
+$P^\star\in[20,30]\%$, recovering the $[20,40]\%$ range reported by
+Kruijssen et~al.~(2024) and reversing the ordering of competing mechanisms --- an
+adaptive rule operating in $[55,85]\%$ ranks \emph{best} under the biased metric and
+near-worst under the unbiased one. We then re-examine volatility-adaptive replacement
+(VAMS), the natural extension of the framework. Across four pool dynamics, $100$ seeds
+and both metrics, adaptive $P$ is statistically \emph{equivalent} to a fixed $P$ under
+two one-sided tests. We give the mechanism: the control signal $\sigma_A$ varies at
+exactly the sampling noise floor of a standard-deviation estimator
+($0.0208$ measured against $0.0208$ predicted), so it carries no state information.
+An oracle search over time-varying schedules for $P$, tuned with hindsight on the
+data it is scored on, yields no gain over the best constant $P$ ($p=0.63$, $p=0.55$),
+bounding the entire family of such policies.
+
+Finally we show the framework is not at its ceiling: replacing the scalar percentile
+with a per-participant uncertainty bonus improves quality over a correctly tuned static
+baseline in all four pool dynamics, by up to $24\%$ of the merit-over-random gap
+(paired $\Delta=+0.0118$, 95\% CI $[+0.0097,+0.0139]$).
+\end{abstract}
+
+% ===========================================================================
+\section{Introduction}
+
+Decentralized networks that reward measurable performance must repeatedly choose an
+active subset of participants from a larger pool. Random sortition gives
+representativeness but ignores quality. Kruijssen et~al.~\cite{kruijssen2024} propose
+\emph{merit-based sortition}: participants are ranked by an EMA of their observed
+quality, and a replacement percentile $P$ determines the value imputed to participants
+who were not observed, which in turn governs how quickly they are promoted.
+
+The framework invites an obvious extension. Real networks are non-stationary, so $P$
+ought to adapt. We set out to evaluate exactly that hypothesis and found it false.
+More importantly, we found that the instrument used to evaluate it --- the quality
+metric --- is itself biased in a way that is correlated with the parameter under study,
+which means the measurement cannot answer the question it is being asked.
+
+This paper makes four contributions.
+
+\begin{enumerate}\itemsep2pt
+\item \textbf{A selection-conditioned bias} in the standard evaluation metric
+(Section~\ref{sec:bias}), measured at $0.108\times$ churn, $R^2=0.874$.
+
+\item \textbf{What it invalidates} (Section~\ref{sec:consequences}): the location of
+the optimal $P$ moves from $[20,30]\%$ to $[70,85]\%$, and the ranking of competing
+mechanisms inverts.
+
+\item \textbf{Two negative results, stated as equivalences rather than failures to
+reject} (Sections~\ref{sec:vams}--\ref{sec:headroom}): volatility-adaptive $P$ is
+equivalent to fixed $P$ under TOST at $n=100$, with a measured mechanism for why; and
+an \emph{oracle} time-varying schedule gains nothing, which bounds the whole policy
+class rather than refuting one rule.
+
+\item \textbf{A positive result} (Section~\ref{sec:ucb}): per-participant
+uncertainty-directed selection beats a correctly tuned static baseline in all four
+pool dynamics.
+\end{enumerate}
+
+We emphasise at the outset that the bias we report is a property of a
+\emph{reimplementation} of the framework, and that measuring correctly
+\emph{reproduces} the central conclusions of~\cite{kruijssen2024} rather than
+overturning them. The cautionary finding is about how easily a plausible-looking
+metric can invert a conclusion, not about the original mechanism.
+
+% ===========================================================================
+\section{Background}
+
+\subsection{Merit-based sortition}
+A pool of $N_{\mathrm{tot}}$ participants evolves over $N_{\mathrm{epochs}}$ epochs.
+At each epoch $i$ an active set $A_i$ of size $N_{\mathrm{act}}$ is selected. Each
+active participant $j$ produces an instantaneous quality
+$T_{ij}\sim\mathcal{N}(\tilde Q_j, V)$, where the latent median quality
+$\tilde Q_j\sim\mathcal{N}(\mu_Q,\sigma_Q)$ is fixed for the participant's lifetime.
+Inactive participants produce nothing. A smoothed metric is maintained for every
+participant,
+\begin{equation}
+Q_{ij} \;=\; \alpha\,\hat Q_{ij} + (1-\alpha)\,Q_{i-1,j},
+\end{equation}
+with $\hat Q_{ij}=T_{ij}$ for active participants and, crucially,
+\begin{equation}\label{eq:impute}
+\hat Q_{ij} \;=\; f_P\!\left(T_{i,A_i}\right)
+\quad\text{for inactive } j,
+\end{equation}
+the $P$-th percentile of the active set's observed qualities. The next active set is
+the top $N_{\mathrm{act}}$ participants by $Q_{ij}$.
+
+\begin{remark}[$P$ is an exploration rate]\label{rem:explore}
+Equation~\eqref{eq:impute} is the only place $P$ enters. It does not directly specify
+how many participants are replaced; it sets how \emph{optimistically} unobserved
+participants are credited. A high $P$ inflates the imputed value, lifting inactive
+participants up the ranking and accelerating promotion. In bandit terms, $P$ is an
+optimism bonus applied to unpulled arms --- a framing we return to in
+Section~\ref{sec:ucb}.
+\end{remark}
+
+We use the parameters of~\cite{kruijssen2024} throughout: $\mu_Q=0.2$,
+$\sigma_Q=0.1$, $V=0.2$, $\alpha=0.1$, $N_{\mathrm{epochs}}=1000$, and the four pool
+scenarios in Table~\ref{tab:scenarios}.
+
+\begin{table}[t]\centering\small
+\caption{Pool scenarios, following~\cite{kruijssen2024}.}
+\label{tab:scenarios}
+\begin{tabular}{lrrrr}
+\toprule
+Scenario & $N_{\mathrm{init}}$ & $N_{\mathrm{act}}$ & $p_{\mathrm{growth}}$ & $p_{\mathrm{attr}}$\\
+\midrule
+Fixed     & 80  & 50 & $10^{-10}$ & $10^{-10}$\\
+Growing   & 8   & 32 & $0.1$      & $10^{-10}$\\
+Shrinking & 100 & 32 & $10^{-10}$ & $2\times10^{-3}$\\
+Evolving  & 100 & 32 & $0.1$      & $2\times10^{-3}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Experimental protocol}
+All results use a vectorized engine validated against a direct transcription of the
+reference implementation: across all four scenarios and both the fixed and adaptive
+modes, the two engines agree (Welch $p>0.56$ in all eight comparisons, means within
+$0.003$).
+
+We report Welch's $t$-test, Hedges-corrected Cohen's $d$, and --- for every claim of
+\emph{no difference} --- two one-sided tests (TOST) against a smallest effect size of
+interest $\varepsilon=0.005$, which is $10\%$ of the merit-over-random quality gap.
+This matters: at $n=10$ seeds, the protocol used in the reference notebooks, a
+two-sample test has $80\%$ power only for $d\gtrsim1.3$. Absence of significance at
+that sample size carries almost no information. We use $n=100$ throughout and $n=120$
+paired seeds for the final comparison.
+
+% ===========================================================================
+\section{A selection-conditioned bias}
+\label{sec:bias}
+
+\subsection{Three estimands}
+Let $\mathrm{lat}(S)=|S|^{-1}\sum_{j\in S}\tilde Q_j$ denote the mean latent quality of
+a set $S$. The quantity a network operator cares about is the latent quality of the set
+it fields. Three candidate measurements present themselves:
+\begin{align}
+M_1 &= \textstyle\frac{1}{|A_i|}\sum_{j\in A_i} T_{ij}, \\
+M_2 &= \textstyle\frac{1}{|A_{i+1}|}\sum_{j\in A_{i+1}} \tilde T_{ij}, \\
+M_3 &= \mathrm{lat}(A_{i+1}),
+\end{align}
+where in $M_2$, $\tilde T_{ij}=T_{ij}$ for retained participants
+$j\in A_i\cap A_{i+1}$ and an independent fresh draw for newly promoted ones.
+$M_2$ is the metric implemented in the reference notebooks; $M_3$ is ground truth,
+available only in simulation.
+
+\begin{proposition}\label{prop:bias}
+$M_1$ is unbiased for $\mathrm{lat}(A_i)$, and in a stationary regime
+$\mathbb{E}[M_1]=\mathbb{E}[M_3]$. $M_2$ is biased upward, with
+$\mathbb{E}[M_2]-\mathbb{E}[M_3]=(1-c)\,b$, where $c$ is the churn rate and
+$b=\mathbb{E}[T_{ij}\mid j\in A_{i+1}]-\tilde Q_j>0$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Given $A_i$, each $T_{ij}$ is drawn independently of the selection rule, which has not
+yet consumed it; hence $\mathbb{E}[M_1\mid A_i]=\mathrm{lat}(A_i)$. Stationarity of the
+active-set composition gives $\mathbb{E}[\mathrm{lat}(A_i)]=\mathbb{E}[\mathrm{lat}(A_{i+1})]$.
+For $M_2$, membership of $A_{i+1}$ is determined by $Q_{ij}$, which was just updated
+using $T_{ij}$; conditioning on retention therefore selects on the realised
+$T_{ij}$, so $\mathbb{E}[T_{ij}\mid j\in A_{i+1}]>\tilde Q_j$. Newly promoted
+participants contribute independent draws and are unbiased, leaving the $(1-c)$ factor.
+\end{proof}
+
+The empirical check is decisive: $M_1$ and $M_3$ agree to four decimal places at every
+$P$ in every scenario (Figure~\ref{fig:divergence}), exactly as
+Proposition~\ref{prop:bias} requires, while $M_2$ departs from both.
+
+\subsection{The bias scales with churn}
+Proposition~\ref{prop:bias} leaves the magnitude of $b$ open, and $b$ is not constant:
+raising $P$ inflates the imputed value in~\eqref{eq:impute}, intensifying competition
+from the inactive pool, so retention demands a larger realised $T_{ij}$ and the
+conditioning bias grows. Empirically the net effect is close to linear in churn and
+passes through the origin (Figure~\ref{fig:churn}):
+\begin{equation}
+M_2-M_1 \;=\; 0.108\,c, \qquad R^2=0.874 .
+\end{equation}
+At $P\leq10\%$, where $c<0.003$, the two metrics are numerically identical; by
+$P=100\%$ in the evolving pool, where $c=0.69$, they differ by $0.049$ --- comparable
+to the entire merit-over-random effect the framework exists to produce.
+
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{../paper_figs/fig1_metric_divergence.pdf}
+\caption{Mean active-set quality against the replacement percentile. The unbiased
+metric $M_1$ (blue) and latent ground truth $M_3$ (green, dashed) are
+indistinguishable; the implemented metric $M_2$ (orange) diverges. Circles mark each
+curve's argmax. Shading marks the $[20,40]\%$ range reported
+by~\cite{kruijssen2024}, which contains the unbiased optimum in all four scenarios.}
+\label{fig:divergence}
+\end{figure}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{../paper_figs/fig2_bias_churn.pdf}
+\caption{Left: the bias $M_2-M_1$ against per-epoch churn, pooled over all $P$ and all
+four scenarios; the fit is through the origin. Right: churn is itself driven by $P$,
+which is why the bias is correlated with the parameter under study.}
+\label{fig:churn}
+\end{figure}
+
+% ===========================================================================
+\section{What the bias invalidates}
+\label{sec:consequences}
+
+\subsection{The optimal percentile}
+Under $M_2$ the apparent optimum is $P^\star=85,70,70,70\%$ for the fixed, growing,
+shrinking and evolving pools. Under $M_1$ it is $P^\star=20,25,30,30\%$. The unbiased
+optima fall inside the $[20,40]\%$ band reported in~\cite{kruijssen2024}, and the
+unbiased curves reproduce the mechanism given there in words --- that at high
+percentiles ``the active set is populated almost randomly'' --- which the biased
+curves contradict.
+
+\subsection{The ranking of mechanisms}
+The reversal is not confined to tuning a scalar. Figure~\ref{fig:inversion} scores
+eight mechanisms on both metrics in the evolving pool. Under $M_2$, an adaptive rule
+operating over $[55,85]\%$ is the \emph{best} mechanism tested; under $M_1$ it is
+second-worst, ahead only of random sortition ($d=-2.42$). A study using $M_2$ would
+have selected and reported precisely the wrong mechanism.
+
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{../paper_figs/fig3_ranking_inversion.pdf}
+\caption{Eight mechanisms scored on both metrics (evolving pool, $n=100$, error bars
+95\% CI). The metric determines which mechanism appears best.}
+\label{fig:inversion}
+\end{figure}
+
+% ===========================================================================
+\section{Volatility-adaptive $P$ is equivalent to fixed $P$}
+\label{sec:vams}
+
+\subsection{The hypothesis}
+The natural extension of the framework makes $P$ respond to the network's current
+volatility,
+\begin{equation}\label{eq:vams}
+P_t = P_{\min} + (P_{\max}-P_{\min})\,
+      \varsigma\!\left(k\,(\sigma_{A,t-1}-\sigma_{\mathrm{ref}})\right),
+\end{equation}
+with $\varsigma$ the logistic function, $\sigma_{A,t}$ the standard deviation of the
+active set's observed qualities and $\sigma_{\mathrm{ref}}$ its rolling mean over $W$
+epochs. The intent is to replace more aggressively when the network is unstable.
+
+\subsection{Result: equivalence, not merely non-significance}
+Across four scenarios, $n=100$ seeds, and \emph{both} metrics,
+equation~\eqref{eq:vams} is statistically equivalent to a fixed $P=25\%$ under TOST at
+$\varepsilon=0.005$ (Table~\ref{tab:vams}). Re-centring the bounds on the per-scenario
+optimum does not change this ($|d|\leq0.034$, TOST equivalent in all four). The null is
+robust to the metric, to the adaptive range, and --- in a companion sweep --- to six
+functional forms for~\eqref{eq:vams} and a $5\times5$ grid over $(k,W)$.
+
+\begin{table}[t]\centering\small
+\caption{Adaptive $P$ versus fixed $P=25\%$, $n=100$ seeds. All comparisons are
+equivalent under TOST at $\varepsilon=0.005$.}
+\label{tab:vams}
+\begin{tabular}{lrrrr}
+\toprule
+& \multicolumn{2}{c}{on $M_1$} & \multicolumn{2}{c}{on $M_2$}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Scenario & $d$ & $p$ & $d$ & $p$\\
+\midrule
+Fixed     & $-0.004$ & $0.975$ & $+0.010$ & $0.945$\\
+Growing   & $-0.056$ & $0.691$ & $-0.035$ & $0.801$\\
+Shrinking & $-0.009$ & $0.947$ & $+0.005$ & $0.974$\\
+Evolving  & $-0.106$ & $0.453$ & $-0.077$ & $0.584$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Why: the control signal is noise}
+The reason is measurable. For an active set of size $n$ with observation noise $V$, the
+sampling standard deviation of a standard-deviation estimator is
+$\approx\sigma/\sqrt{2n}$. In the fixed pool we measure the epoch-to-epoch standard
+deviation of $\sigma_A$ at $0.0208$ against a predicted noise floor of $0.0208$; in the
+evolving pool, $0.0265$ against $0.0258$. Because merit selection compresses the active
+set's latent spread to $\approx0.057$ against $V=0.2$, $\sigma_A$ is dominated by
+measurement noise and its fluctuations are statistically indistinguishable from pure
+estimator noise.
+
+Equation~\eqref{eq:vams} therefore steers $P_t$ with a noise process. The consequence
+is visible in the realised control: $P_t$ has mean $24.99$ and standard deviation
+$2.97$, lying within $\pm5$ points of $25\%$ in $91\%$ of epochs. VAMS is fixed-$P$
+sortition plus jitter, by construction.
+
+\begin{proposition}[Arity]\label{prop:arity}
+No function of active-set summary statistics can supply the information the mechanism
+needs. By Remark~\ref{rem:explore}, $P$ sets the optimism credited to unobserved
+participants; the efficient optimism for participant $j$ depends on how much is known
+about $j$ --- how long it has been unobserved. A scalar $P_t$ applies an identical
+bonus to a participant idle for three epochs and one idle for three hundred. The
+deficiency is in the dimension of the control variable, not the shape of its response.
+\end{proposition}
+
+Proposition~\ref{prop:arity} predicts the null before the experiment, and predicts that
+no alternative functional form will rescue it --- which is what we observe.
+
+% ===========================================================================
+\section{A headroom bound on time-varying $P$}
+\label{sec:headroom}
+
+Refuting one rule at a time invites the objection that a better rule exists. We bound
+the family instead. Consider two-phase schedules $P_t=p_1$ for $t<t_0$ and $p_2$
+thereafter, and select the best $(p_1,p_2,t_0)$ \emph{using the same data it is scored
+on}. This oracle has hindsight no causal rule can have, so its margin upper-bounds what
+any online policy could achieve.
+
+The oracle gains nothing: $+0.0013$ in the fixed pool ($d=0.096$, $p=0.63$) and
+$-0.0016$ in the evolving pool ($d=-0.120$, $p=0.55$), both against the best constant
+$P$. Within this framework, time-varying $P$ has no headroom to exploit.
+
+% ===========================================================================
+\section{Uncertainty-directed sortition}
+\label{sec:ucb}
+
+\subsection{Mechanism}
+Proposition~\ref{prop:arity} points at the fix: make the optimism per-participant.
+We retain the sortition framework and change two things. First, the estimator becomes
+convergent --- a running sample mean over observed qualities rather than a
+fixed-$\alpha$ EMA, which has a permanent error floor of
+$V\sqrt{\alpha/(2-\alpha)}\approx0.046$ against a latent spread of only
+$\sigma_Q=0.1$. Second, inactive participants receive no imputed observation at all;
+instead selection ranks
+\begin{equation}\label{eq:ucb}
+s_j \;=\; \hat Q_j + c\sqrt{\frac{\log t}{n_j}},
+\end{equation}
+with $n_j$ the number of epochs $j$ has been active and $n_j=0$ given priority. This is
+a combinatorial semi-bandit with $N_{\mathrm{act}}$ plays per round~\cite{chen2013}.
+
+\subsection{Result}
+Against a static baseline swept finely around its own optimum and compared on $120$
+paired seeds using the unbiased metric, equation~\eqref{eq:ucb} wins in all four pool
+dynamics (Table~\ref{tab:ucb}, Figure~\ref{fig:ucb}).
+
+\begin{table}[t]\centering\small
+\caption{Uncertainty-directed selection versus a correctly tuned static $P$, scored on
+$M_1$, $120$ paired seeds.}
+\label{tab:ucb}
+\begin{tabular}{lrrrr}
+\toprule
+Scenario & best $P$ & $\Delta$ & 95\% CI & $d$\\
+\midrule
+Fixed     & $20\%$ & $+0.0040$ & $[0.0037,0.0042]$ & $0.34$\\
+Growing   & $25\%$ & $+0.0057$ & $[0.0041,0.0073]$ & $0.37$\\
+Shrinking & $25\%$ & $+0.0037$ & $[0.0034,0.0040]$ & $0.23$\\
+Evolving  & $30\%$ & $+0.0118$ & $[0.0097,0.0139]$ & $0.93$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{../paper_figs/fig4_ucb_result.pdf}
+\caption{Left: paired improvement over a correctly tuned static $P$, 95\% CI; the
+dashed line is the pre-registered smallest effect of interest. Right: the exploration
+constant has a broad interior optimum.}
+\label{fig:ucb}
+\end{figure}
+
+We report this carefully. All four intervals exclude zero, but in the fixed and
+shrinking pools the gain is \emph{below} our pre-registered $\varepsilon=0.005$ and the
+same data support an equivalence verdict; the improvement there is reliable but
+practically marginal. Scaled against the merit-over-random gap of $\approx0.05$, the
+gains are $8\%$, $11\%$, $7\%$ and $24\%$. Only in the evolving pool --- the most
+non-stationary scenario, where per-participant uncertainty varies most --- is the
+effect substantial. The exploration constant is not knife-edged but it does matter:
+$c\in[0.15,0.3]$ improves on the tuned static baseline in every scenario, with an
+interior optimum near $c\approx0.2$, whereas $c\leq0.05$ under-explores and loses to it
+in half the scenarios ($-0.0060$ fixed, $-0.0006$ shrinking at $c=0.05$).
+Equation~\eqref{eq:ucb} therefore trades one tuned scalar ($P$) for another ($c$);
+its advantage is that $c$ modulates a per-participant quantity, which
+Proposition~\ref{prop:arity} identifies as the information $P$ cannot carry.
+
+\subsection{Estimator memory}
+Sweeping the estimator's effective smoothing against a mean-reverting drift in latent
+quality (with stationary variance held fixed, so drift is not confounded with a
+widening quality distribution) shows the reference value $\alpha=0.1$ is never optimal:
+the best effective smoothing is $\approx0.02$, a memory of roughly $50$ epochs rather
+than $10$, at every drift rate tested. A small amount of forgetting does beat infinite
+memory once drift is present, so the trade-off is real --- it is simply mis-calibrated
+by about a factor of five.
+
+% ===========================================================================
+\section{Discussion}
+
+\paragraph{The general lesson.}
+The bias reported here is not exotic. It arises from a natural-looking choice --- score
+the set you just selected, using the observations you have --- whose defect is that the
+selection consumed those observations. The dangerous feature is not its size but its
+\emph{correlation with the independent variable}: because churn rises with $P$, the
+bias masquerades as a treatment effect. Any mechanism that increases turnover is
+flattered. We suggest a simple discipline for this class of evaluation: score the
+population \emph{before} the selection rule consumes the observations, and verify
+against latent ground truth where simulation permits.
+
+\paragraph{Limitations.}
+First, our results concern the simulation model of~\cite{kruijssen2024}, in which
+latent quality is fixed for a participant's lifetime; conclusions about estimator
+memory in particular may not transfer to networks with substantial drift, though our
+OU-drift sweep probes this directly. Second, Proposition~\ref{prop:bias} is stated for
+a stationary regime and verified numerically rather than proved in full generality.
+Third, we adapt the regret framework of~\cite{chen2013} by analogy and do not derive a
+bound specific to this mechanism; the sortition setting differs in that the
+\emph{pool itself} grows and shrinks. Fourth, all results are simulation-only;
+validation on deployed network data remains open.
+
+\paragraph{Future work.}
+With a correct measurement harness in place, the search for mechanisms that genuinely
+improve on tuned static sortition is well posed for the first time. The gains we report
+are modest, and Section~\ref{sec:headroom} suggests the remaining headroom in
+\emph{scalar} policies is near zero --- so progress must come from richer control, of
+which~\eqref{eq:ucb} is the simplest instance.
+
+% ===========================================================================
+\section{Conclusion}
+
+The metric used to evaluate merit-based sortition conditions on the selection event it
+is meant to evaluate, producing an upward bias proportional to turnover and therefore to
+the replacement percentile itself. Correcting it moves the apparent optimal percentile
+from $[70,85]\%$ to $[20,30]\%$ --- reproducing, rather than overturning, the range
+reported by Kruijssen et~al. --- and reverses which mechanisms appear best. Measured
+correctly, volatility-adaptive replacement is equivalent to fixed replacement, for a
+reason we can state and measure: its control signal sits at the noise floor, and a
+scalar control cannot carry per-participant information in any case. An oracle schedule
+confirms the whole family is exhausted. Replacing the scalar with a per-participant
+uncertainty bonus does improve on a correctly tuned baseline, substantially so in the
+most dynamic regime.
+
+% ===========================================================================
+\begin{thebibliography}{9}\small
+
+\bibitem{kruijssen2024}
+J.~M.~D. Kruijssen, R.~Valieva, K.~Peluso, N.~Emmons, and S.~N. Longmore.
+\newblock Merit-Based Sortition in Decentralized Systems.
+\newblock \emph{Allora Decentralized Intelligence}, 1:20--27, 2024.
+\newblock arXiv:2411.07302.
+
+\bibitem{chen2013}
+W.~Chen, Y.~Wang, and Y.~Yuan.
+\newblock Combinatorial multi-armed bandit: General framework and applications.
+\newblock In \emph{Proc. ICML}, 2013.
+
+\bibitem{auer2002}
+P.~Auer, N.~Cesa-Bianchi, and P.~Fischer.
+\newblock Finite-time analysis of the multiarmed bandit problem.
+\newblock \emph{Machine Learning}, 47:235--256, 2002.
+
+\bibitem{garivier2011}
+A.~Garivier and E.~Moulines.
+\newblock On upper-confidence bound policies for switching bandit problems.
+\newblock In \emph{Proc. ALT}, 2011.
+
+\bibitem{lakens2017}
+D.~Lakens.
+\newblock Equivalence tests: A practical primer for $t$-tests, correlations, and
+meta-analyses.
+\newblock \emph{Social Psychological and Personality Science}, 8(4):355--362, 2017.
+
+\bibitem{flanigan2021}
+B.~Flanigan, P.~G\"olz, A.~Gupta, B.~Hennig, and A.~D. Procaccia.
+\newblock Fair algorithms for selecting citizens' assemblies.
+\newblock \emph{Nature}, 596:548--552, 2021.
+
+\end{thebibliography}
+
+\end{document}
