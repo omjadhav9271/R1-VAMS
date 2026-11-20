@@ -2,7 +2,7 @@ import json, os, re, sys
 import numpy as np, matplotlib as mpl
 mpl.use("Agg"); import matplotlib.pyplot as plt
 sys.stdout.reconfigure(encoding="utf-8")
-OUT = r"D:\Resume Projects\Research\R1-VAMS\paper_figs"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "paper_figs")
 C1, INK, INK2, INK3 = "#2a78d6", "#0b0b0b", "#52514e", "#8a8984"
 mpl.rcParams.update({"font.family":"serif","font.serif":["DejaVu Serif"],"font.size":8.5,
  "axes.spines.top":False,"axes.spines.right":False,"axes.edgecolor":INK3,

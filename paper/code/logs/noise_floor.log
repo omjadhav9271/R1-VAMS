@@ -1,7 +1,0 @@
-sigma_A NOISE FLOOR (static P=25, 100 seeds, epochs 200-999)
-Scenario   mean sigma_A  sd(sigma_A)  floor s/sqrt(2n)  ratio  lag-1 ac implied latent sd
-Fixed            0.2113       0.0213            0.0211  1.007    +0.004             0.075
-Growing          0.2089       0.0269            0.0261  1.031    +0.023             0.071
-Shrinking        0.2132       0.0318            0.0266  1.194    +0.027             0.083
-Evolving         0.2090       0.0267            0.0261  1.021    +0.010             0.071
-elapsed 96s   -> noise_floor_results.json

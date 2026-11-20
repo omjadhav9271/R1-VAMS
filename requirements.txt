@@ -1,0 +1,4 @@
+# Python 3.13. Exact versions used for every result in paper/code/*_results.json.
+numpy==2.4.4
+scipy==1.17.1
+matplotlib==3.10.8

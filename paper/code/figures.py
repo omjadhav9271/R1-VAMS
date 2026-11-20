@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-OUT = r"D:\Resume Projects\Research\R1-VAMS\paper_figs"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "paper_figs")
 os.makedirs(OUT, exist_ok=True)
 
 C1, C2, C3 = "#2a78d6", "#eb6834", "#1baf7a"   # M1 unbiased, M2 as-implemented, M3 latent
