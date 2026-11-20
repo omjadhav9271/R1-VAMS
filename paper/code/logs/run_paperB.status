@@ -8,3 +8,16 @@ paperB_edge start 16:01:53
 paperB_edge exit=0 16:34:46
 EDGE DONE 16:34:46
 paperB_complete start 08:16:22
+paperB_complete start 09:25:44 (linux, WORKERS=20)
+paperB_complete exit=0 09:52:21
+COMPLETE DONE 09:52:21
+bitwise ok 09:52:27
+paperB_complete.py start 09:52:27
+paperB_complete.py  exit=0 10:21:43
+paperB_final.py start 10:21:43
+paperB_final.py --complete exit=0 10:21:43
+paperB_robust.py start 10:21:43
+paperB_robust.py --complete exit=0 10:21:44
+paperB_attack.py start 10:21:44
+paperB_attack.py  exit=0 10:23:35
+REST DONE 10:23:35

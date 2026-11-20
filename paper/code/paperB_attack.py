@@ -26,7 +26,9 @@ import paperB_complete as C
 
 SEEDS=list(range(15000,15100)); EPS=0.005; OUT='paperB_attack_results.json'
 POOLS=['Fixed','Evolving']; THETAS=[0.0,0.02]; FRACS=[0.0,0.05,0.10,0.20]
-N0S=[1.0,3.0,10.0]; ADV_Q=0.2-2*0.1
+# 30/100 added 2026-11-20: a 5-seed pilot showed n0=3 barely dents the attack, so {1,3,10}
+# could end before the prior has any effect
+N0S=[1.0,3.0,10.0,30.0,100.0]; ADV_Q=0.2-2*0.1
 
 def _j(a):
     name,th,kw,frac,s=a; st={}

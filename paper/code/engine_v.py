@@ -31,6 +31,42 @@ MODES = ('random', 'static', 'adaptive', 'ucb', 'greedy', 'sched', 'ducb', 'swuc
 #   ts    -- Gaussian Thompson sampling on the discounted statistics (gamma=1: plain mean):
 #            score = S/N + ts_scale*z/sqrt(N), z~N(0,1). ts_scale ~ noise sd V is the
 #            flat-prior posterior; it is tuned like c.
+# Whitewashing threat model (Paper B, paperB_attack.py):
+#   adv_frac  -- each identity (initial pool and arrivals) is adversarial with this probability,
+#                drawn from a separate stream so adv_frac=0 leaves every run bitwise unchanged.
+#                Adversaries have latent quality pinned at adv_Q (no OU drift).
+#   An adversary that has been observed and is then not selected abandons the identity and
+#   rejoins at once as a fresh one (same latent quality, same remaining lifetime): free,
+#   instantaneous whitewashing, the worst case for the defender.
+#   prior_n0  -- bandit modes (ducb, swucb, ts): every identity that joins after epoch 0
+#                (honest arrival or rejoin) starts with prior_n0 pseudo-observations at the
+#                epoch's imputed percentile, instead of zero (infinite optimism). D-UCB/TS
+#                discount them like real ones; under SW-UCB they never leave the window.
+#   stats     -- optional dict; filled with 'adv_share', the adversarial share of each
+#                epoch's selected set.
+
+# Observation noise (Paper A, pivotality): noise= 'gauss' (default), 'laplace', 'uniform', 't5',
+# each mean zero with sd V. g(u) = E[eps 1{eps > u}] is the covariance a participant with flip
+# point u contributes to the selection bias (Stein / zero-bias identity; V*phi(u/V) if Gaussian).
+NOISES = ('gauss', 'laplace', 'uniform', 't5')
+
+
+def noise_g(u, noise, V):
+    u = np.asarray(u, dtype=float)
+    if noise == 'gauss':
+        return V * np.exp(-0.5 * (u / V) ** 2) / np.sqrt(2 * np.pi)
+    if noise == 'laplace':
+        b = V / np.sqrt(2.0)
+        return 0.5 * (np.abs(u) + b) * np.exp(-np.abs(u) / b)
+    if noise == 'uniform':
+        a = V * np.sqrt(3.0)
+        return np.where(np.abs(u) < a, (a * a - u * u) / (4 * a), 0.0)
+    if noise == 't5':
+        from scipy.stats import t as _t
+        sc = V * np.sqrt(3.0 / 5.0); x = u / sc
+        return sc * (5.0 + x * x) / 4.0 * _t.pdf(x, 5)
+    raise ValueError(noise)
+
 
 # The six VAMS response curves from VAMS_Final_Comparison.ipynb, map (sigma_A, sigma_ref) -> P_t.
 # 'k' is each form's own gain parameter; None uses that notebook's default.
@@ -61,9 +97,24 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
         pgrowth=1e-10, pattr=1e-10, mode='static', P_static=25.0,
         P_min=10.0, P_max=40.0, k=None, window=50,
         c_ucb=0.3, ou_theta=0.0, alpha_floor=0.0, sched=None, form='sigmoid', seed=42,
-        gamma=1.0, sw_tau=100, ts_scale=0.2):
+        gamma=1.0, sw_tau=100, ts_scale=0.2,
+        adv_frac=0.0, adv_Q=0.0, prior_n0=0.0, stats=None, noise='gauss'):
 
     rng = np.random.default_rng(seed)
+    if noise == 'gauss':
+        draw = lambda loc: rng.normal(loc, V)
+    elif noise == 'laplace':
+        draw = lambda loc: rng.laplace(loc, V / np.sqrt(2.0))
+    elif noise == 'uniform':
+        draw = lambda loc: rng.uniform(loc - V * np.sqrt(3.0), loc + V * np.sqrt(3.0))
+    elif noise == 't5':
+        draw = lambda loc: loc + V * np.sqrt(3.0 / 5.0) * rng.standard_t(5, np.shape(loc))
+    else:
+        raise ValueError(noise)
+    # pivotality diagnostic (static / ucb only): predicted selection bias from flip points
+    want_pivot = stats is not None and stats.get('pivot') is True and mode in ('static', 'ucb')
+    piv_bias = np.full(Nepochs, np.nan)          # flip points scored against latent quality
+    piv_audit = np.full(Nepochs, np.nan)         # ... against each participant's own estimate
     p_safe = max(pattr, 1e-15)
 
     # OU innovation scale chosen so stationary sd == sigma_Q for any theta
@@ -76,6 +127,11 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
     alive = np.ones(n, dtype=bool)
     active = np.zeros(n, dtype=bool)
     lifetime = (rng.geometric(p_safe, n) if pattr > 0 else np.full(n, 10 ** 8)).astype(np.int64)
+    attack = adv_frac > 0.0
+    adv_rng = np.random.default_rng([seed, 1]) if attack else None
+    adv = adv_rng.random(n) < adv_frac if attack else np.zeros(n, dtype=bool)
+    Q_med[adv] = adv_Q
+    adv_share = np.full(Nepochs, np.nan)
 
     use_mean = mode in ('ucb', 'greedy')
     use_bandit = mode in ('ducb', 'swucb', 'ts')
@@ -97,9 +153,26 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
     ia = np.flatnonzero(alive)
     active[rng.choice(ia, size=min(Nact, ia.size), replace=False)] = True
 
+    def join(Q_new, adv_new, life_new, seed_est):
+        # append fresh identities; bandit statistics start empty or at the newcomer prior
+        nonlocal Q_med, Q_est, n_obs, bN, bS, alive, active, lifetime, adv
+        k = Q_new.size
+        n0 = prior_n0 if use_bandit else 0.0
+        Q_med = np.concatenate([Q_med, Q_new])
+        Q_est = np.concatenate([Q_est, np.full(k, seed_est)])
+        n_obs = np.concatenate([n_obs, np.zeros(k, dtype=np.int64)])
+        bN = np.concatenate([bN, np.full(k, n0)])
+        bS = np.concatenate([bS, np.full(k, n0 * seed_est)])
+        alive = np.concatenate([alive, np.ones(k, dtype=bool)])
+        active = np.concatenate([active, np.zeros(k, dtype=bool)])
+        lifetime = np.concatenate([lifetime, life_new])
+        adv = np.concatenate([adv, adv_new])
+
     for i in range(Nepochs):
         if ou_theta > 0.0:
             Q_med += ou_theta * (mu_Q - Q_med) + ou_step * rng.standard_normal(Q_med.size)
+            if attack:
+                Q_med[adv] = adv_Q
 
         ia = np.flatnonzero(alive)
         if ia.size == 0:
@@ -110,7 +183,7 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
         if act_idx.size == 0:
             continue
 
-        T_act = rng.normal(Q_med[act_idx], V)
+        T_act = draw(Q_med[act_idx])
         std_T = float(T_act.std()) if T_act.size > 1 else 0.0
         S_hist[i] = std_T
         obs_A[i]  = float(T_act.mean())
@@ -133,6 +206,8 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
         P_hist[i] = P_t
         target_inactive = float(np.percentile(T_act, P_t))
 
+        if want_pivot:
+            pre_est = Q_est.copy()
         # ---------------- estimator update ----------------
         if use_bandit:
             if mode == 'swucb':
@@ -209,6 +284,9 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
                 vv = est[valid]
                 new_active = v[np.argsort(-vv, kind='stable')[:take]]
 
+        if want_pivot:
+            piv_bias[i], piv_audit[i] = _pivot(mode, Q_est, pre_est, n_obs, ia, act_idx, Q_med, take,
+                                               new_active, alpha, alpha_floor, c_ucb, i, noise, V)
         active[:] = False
         active[new_active] = True
 
@@ -220,11 +298,25 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
             obs[was] = T_act[np.searchsorted(act_idx, new_active[was])]
         nw = ~was
         if nw.any():
-            obs[nw] = rng.normal(Q_med[new_active[nw]], V)
+            obs[nw] = draw(Q_med[new_active[nw]])
         mean_T[i] = float(obs.mean())
         # latent quality of the selected set: no measurement noise, no selection bias
         lat_Q[i] = float(Q_med[new_active].mean())
         churn[i] = float((~was).sum() / max(new_active.size, 1))
+        adv_share[i] = float(adv[new_active].mean()) if new_active.size else np.nan
+
+        # ---------------- whitewashing ----------------
+        if attack:
+            # the abandoned identity is not decremented below, so carry this epoch's tick over;
+            # a participant whose lifetime ends now leaves instead of rejoining
+            ww = np.flatnonzero(adv & alive & ~active & (n_obs > 0))
+            if ww.size:
+                rest = lifetime[ww] - 1
+                alive[ww] = False
+                lifetime[ww] = 0
+                ww = ww[rest > 0]; rest = rest[rest > 0]
+                if ww.size:
+                    join(np.full(ww.size, adv_Q), np.ones(ww.size, dtype=bool), rest, target_inactive)
 
         # ---------------- attrition ----------------
         lifetime[ia] -= 1
@@ -236,17 +328,56 @@ def run(Ninit, Nact, Nepochs=1000, mu_Q=0.2, sigma_Q=0.1, V=0.2, alpha=0.1,
         # ---------------- growth ----------------
         n_new = rng.poisson(pgrowth)
         if n_new > 0:
-            Q_med = np.concatenate([Q_med, rng.normal(mu_Q, sigma_Q, n_new)])
-            Q_est = np.concatenate([Q_est, np.full(n_new, target_inactive)])
-            n_obs = np.concatenate([n_obs, np.zeros(n_new, dtype=np.int64)])
-            bN = np.concatenate([bN, np.zeros(n_new)])
-            bS = np.concatenate([bS, np.zeros(n_new)])
-            alive = np.concatenate([alive, np.ones(n_new, dtype=bool)])
-            active = np.concatenate([active, np.zeros(n_new, dtype=bool)])
+            Q_new = rng.normal(mu_Q, sigma_Q, n_new)
+            a_new = adv_rng.random(n_new) < adv_frac if attack else np.zeros(n_new, dtype=bool)
+            Q_new[a_new] = adv_Q
             nl = rng.geometric(p_safe, n_new) if pattr > 0 else np.full(n_new, 10 ** 8)
-            lifetime = np.concatenate([lifetime, nl.astype(np.int64)])
+            join(Q_new, a_new, nl.astype(np.int64), target_inactive)
 
+    if stats is not None:
+        stats['adv_share'] = adv_share
+        if want_pivot:
+            stats['pivot_bias'] = piv_bias
+            stats['pivot_audit'] = piv_audit
     return mean_T, P_hist, S_hist, lat_Q, churn, obs_A
+
+
+def _pivot(mode, Q_est, pre_est, n_obs, ia, act_idx, Q_med, take, new_active, alpha,
+           alpha_floor, c_ucb, i, noise, V):
+    """Predicted E[M2 - M3 | history] = (1/N') sum_j g(u_j) over the fielded set, where u_j is the
+    noise draw at which j's retention flips with every other draw held fixed. Exact for ucb (own
+    score only); for static it ignores the 1/N_act effect of T_j on the imputed percentile.
+    Returns (prediction from latent quality, audit from the participant's pre-epoch estimate,
+    which needs only the scores, the rule and V)."""
+    if mode == 'ucb':
+        cnt = n_obs[ia]
+        score = Q_est[ia] + c_ucb * np.sqrt(np.log(i + 2.0) / np.maximum(cnt, 1))
+        score = np.where((cnt == 0) | np.isnan(Q_est[ia]), np.inf, score)
+    else:
+        if np.isnan(Q_est[ia]).any():
+            return np.nan, np.nan
+        score = Q_est[ia].copy()
+    sv = np.sort(score)[::-1]
+    if take >= ia.size:
+        return 0.0, 0.0                             # everyone is kept: nobody is pivotal
+    kept = np.isin(act_idx, new_active)
+    c = np.where(kept, sv[take], sv[take - 1])      # best competitor for the last slot
+    pre = pre_est[act_idx]
+    if mode == 'ucb':
+        bonus = c_ucb * np.sqrt(np.log(i + 2.0) / np.maximum(n_obs[act_idx], 1))
+        step = np.maximum(1.0 / np.maximum(n_obs[act_idx], 1), alpha_floor)
+        T_star = np.where(np.isnan(pre), c - bonus, pre + (c - bonus - pre) / step)
+    else:
+        T_star = np.where(np.isnan(pre), c, (c - (1 - alpha) * pre) / alpha)
+    T_star = np.where(np.isinf(c), np.inf, T_star)
+    qh = pre_est[act_idx]
+    fill = np.nanmean(qh) if np.isfinite(qh).any() else 0.0
+    out = []
+    for q in (Q_med[act_idx], np.where(np.isnan(qh), fill, qh)):
+        u = T_star - q
+        g = np.where(np.isinf(u), 0.0, noise_g(np.where(np.isinf(u), 0.0, u), noise, V))
+        out.append(float(g.sum() / max(new_active.size, 1)))
+    return tuple(out)
 
 
 SCENARIOS = {

@@ -1,0 +1,15 @@
+\begin{tabular}{llrrrr}
+\toprule
+Noise & $V$ & \multicolumn{2}{c}{percentile} & \multicolumn{2}{c}{UCB}\\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+ & & slope & in CI & slope & in CI\\
+\midrule
+Gaussian & $0.05$ & $0.013$ & $71\%$ & $0.012$ & $91\%$\\
+Gaussian & $0.1$ & $0.040$ & $71\%$ & $0.036$ & $91\%$\\
+Gaussian & $0.2$ & $0.108$ & $67\%$ & $0.107$ & $94\%$\\
+Gaussian & $0.4$ & $0.247$ & $58\%$ & $0.282$ & $97\%$\\
+Laplace & $0.2$ & $0.095$ & $69\%$ & $0.092$ & $100\%$\\
+uniform & $0.2$ & $0.120$ & $71\%$ & $0.120$ & $100\%$\\
+Student-$t_5$ & $0.2$ & $0.098$ & $79\%$ & $0.096$ & $100\%$\\
+\bottomrule
+\end{tabular}

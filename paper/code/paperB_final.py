@@ -3,7 +3,7 @@ Final Paper B table: merge paperB_baselines_results.json with paperB_edge_result
 (no simulation). Each family's pick is the edge follow-up's pick where one ran, else the
 original. All comparisons are recomputed on the EVAL seeds, paired, and Holm-adjusted
 together. 'edge' marks a final pick still on the boundary of its EXTENDED grid (natural
-limits floor=0, gamma=1 excluded), i.e. the extension list ran out.
+limits floor=0, gamma=1, tau=1000=Nepochs excluded), i.e. the extension list ran out.
 """
 import json, sys, numpy as np
 sys.stdout.reconfigure(encoding='utf-8')
@@ -37,7 +37,7 @@ def final(cell,fam):
 def still_edge(pick,keys):
     fam,pp=E.parse(pick); ps=[E.parse(k)[1] for k in keys]
     for a,v in pp.items():
-        if (a,v) in (('floor',0.0),('gamma',1.0)): continue
+        if (a,v) in (('floor',0.0),('floor',1.0),('gamma',1.0),('tau',1000.0),('scale',0.0),('c',0.0)): continue   # natural limits
         vals=sorted({p[a] for p in ps})
         if len(vals)>1 and v in (vals[0],vals[-1]): return True
     return False

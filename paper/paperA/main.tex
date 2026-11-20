@@ -17,6 +17,7 @@
 \setlength{\emergencystretch}{2em}
 
 \newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
 \newtheorem{remark}{Remark}
 
 \begin{document}
@@ -32,14 +33,17 @@ ranking a smoothed record of their observed quality. Unobserved participants are
 with the $P$-th percentile of the active set's observations, so $P$ controls turnover. While
 extending this mechanism, we found that a natural evaluation metric, which scores the newly
 selected set using the observations that selected it, is biased in a way that inverts
-conclusions. We prove the bias is non-negative for any selection rule that is monotone in
-a participant's own observation, and that it vanishes when no participant is at the
-selection margin. Empirically it grows linearly with churn, at the same rate ($0.107$ to
-$0.108$ per unit of churn) in percentile sortition and in an unrelated
-upper-confidence-bound rule. Because churn rises with $P$, the bias moves the apparent
+conclusions. We derive the bias exactly. For any selection rule that is monotone in a
+participant's own observation, it equals the expected noise mass at each participant's
+retention flip point, whatever the noise distribution. This pivotality formula predicts
+the measured bias to a median $0.6\%$ across four noise laws, two mechanisms and four pool
+dynamics, explains why the bias tracks churn, and yields an audit that recovers it from
+logged scores alone, to within $4\%$ for a running-mean rule. Because churn rises with $P$, the bias moves the apparent
 optimum from $P=20$--$30\%$ to $70$--$85\%$. Acting on it forfeits $35$--$48\%$ of the
 mechanism's gain over random sortition, and it inverts the ranking of competing mechanisms
-in all four pool dynamics we test. Measured correctly, volatility-adaptive $P$ is
+in all four pool dynamics we test. The damage is set by the ratio of observation noise to
+the spread of latent quality: negligible up to a ratio of one, and up to $80\%$ of the gain
+at a ratio of four. Measured correctly, volatility-adaptive $P$ is
 statistically equivalent to a fixed $P$ at the same average in all $92$ variant--pool
 combinations and under latent drift, because its control signal fluctuates at the
 sampling-noise floor. Even with hindsight, the best two-phase schedule for $P$ gains at
@@ -61,7 +65,9 @@ decision by ranking an exponential moving average (EMA) of each participant's ob
 quality. Participants who are not active produce no observations, so they are credited
 with an imputed value: the $P$-th percentile of the active set's current observations. The
 percentile $P$ is the mechanism's main free parameter. Kruijssen et al.\ find an optimum
-at $P=20$--$40\%$ and recommend $P=25\%$ as a starting point.
+at $P=20$--$40\%$ and recommend $P=25\%$ as a starting point. The mechanism is used in
+practice: the Allora network limits the inferences it combines to an active set, typically
+of $32$ inferers, chosen by merit-based sortition~\cite{pfeffer2025context}.
 
 We set out to extend this mechanism. Real networks are non-stationary, so it seemed
 natural that $P$ should respond to the volatility of the active set, replacing participants
@@ -80,16 +86,23 @@ the very parameter under study, and it masquerades as a treatment effect.
 
 \paragraph{Contributions.}
 \begin{enumerate}
-\item We characterise the bias. We prove it is non-negative for any selection rule that
-is monotone in a participant's own score, show it vanishes exactly when no participant is
-at the selection margin, and measure it as $0.108\times$ the churn rate ($R^2=0.874$).
-An independent mechanism class, upper-confidence-bound selection, shows the same bias per
-unit of churn ($0.107$), so the effect is a property of selection itself, not of one
-mechanism (Section~\ref{sec:bias}).
+\item We derive the size of the bias exactly; its sign follows from known results on
+optimistic choosing~\cite{shin2019bias}. For any selection rule that is monotone in a
+participant's own score, the bias equals the sum, over the fielded set, of the noise kernel
+$g(u)=\mathbb E[\epsilon\,\mathbf 1\{\epsilon>u\}]$ evaluated at each participant's
+retention flip point (Theorem~\ref{thm:pivot}): the noise variance times how pivotal the
+participants are. The formula holds for any noise law, recovers non-negativity, and
+explains why the bias is close to linear in churn and why its slope depends on the noise.
+It predicts the measured bias in $560$ settings (four noise laws, four noise levels,
+percentile and upper-confidence-bound selection, four pools) to a median $0.6\%$, and an
+audit built on it recovers the bias of a running-mean rule from logged scores alone to
+within $4\%$ (Sections~\ref{sec:bias} and~\ref{sec:when}).
 \item We quantify what it invalidates. Tuning $P$ on the biased metric selects
 $P\in[70,85]\%$ instead of $[20,30]\%$ and forfeits $35$--$48\%$ of the mechanism's entire
 quality gain over random sortition. It also inverts the ranking of competing mechanisms in
-all four pool dynamics we test (Section~\ref{sec:consequences}).
+all four pool dynamics we test (Section~\ref{sec:consequences}). The damage is governed by
+the noise-to-spread ratio $V/\sigma_Q$: it is negligible at $V/\sigma_Q\le1$ and reaches
+$64$--$80\%$ of the gain at $V/\sigma_Q=4$ (Section~\ref{sec:when}).
 \item We re-evaluate volatility-adaptive $P$ correctly and find it statistically
 \emph{equivalent} to a fixed $P$ at the same average, in all $92$ combinations of $23$
 variants and four pools, and also under latent drift. The cause is measurable: the control
@@ -97,8 +110,9 @@ signal fluctuates at the sampling-noise floor of a standard-deviation estimator
 (Section~\ref{sec:vams}). Even a hindsight-tuned two-phase schedule for $P$ gains at
 most $0.002$ over the best constant on held-out seeds (Section~\ref{sec:headroom}).
 \item We distil an evaluation protocol for selection mechanisms: score before selecting,
-check against latent ground truth, tune on held-out seeds, and state null results as
-equivalence tests (Section~\ref{sec:protocol}).
+check against latent ground truth, tune on held-out seeds, state null results as
+equivalence tests, and audit logged metrics that cannot be rerun
+(Section~\ref{sec:protocol}).
 \end{enumerate}
 
 We stress that the biased metric was ours, not Kruijssen et al.'s. Their metric is the
@@ -167,10 +181,18 @@ estimates and then reporting that estimate overstates the true value: the winner
 in auctions~\cite{thaler1988winner}, the optimizer's curse in decision
 analysis~\cite{smith2006optimizer}, circular analysis in
 neuroimaging~\cite{kriegeskorte2009circular}, and optimistic bias from model selection in
-machine learning~\cite{cawley2010overfitting}. Our contribution is not the phenomenon but
-an instance with a property that makes it unusually harmful: its magnitude is a function
-of the independent variable, so it changes the \emph{location} of the optimum rather than
-adding a constant offset.
+machine learning~\cite{cawley2010overfitting}. Inference on winners corrects the estimate
+of an option selected once~\cite{andrews2024winners}. In bandits, adaptive sampling biases
+sample means downward~\cite{nie2018adaptive}, and Shin et al.~\cite{shin2019bias} show
+that, under monotonicity conditions like our Lemma~\ref{lem:mono}, optimistic sampling
+biases a chosen arm's mean downward while optimistic stopping and choosing bias it upward;
+they also express the bias as a covariance. The sign we prove is an instance of their
+choosing result. What is new here is the magnitude and its consequences. We derive an exact,
+distribution-free formula for the size of the bias in terms of each participant's flip
+point, for a set selected top-$k$ and re-scored every epoch; we show that the magnitude is a
+function of the parameter under study, so it changes the \emph{location} of the optimum
+rather than adding a constant offset; we find when that matters; and we turn the formula
+into an audit.
 
 Our statistical protocol follows work on reproducibility in reinforcement
 learning~\cite{henderson2018deep,agarwal2021precipice}, which shows that conclusions drawn
@@ -188,11 +210,11 @@ $S$. An operator cares about the latent quality of the set it fields. Three per-
 measurements present themselves:
 \begin{align}
 M_1 &= \tfrac{1}{|A_i|}\textstyle\sum_{j\in A_i} T_{ij}
-  && \text{score the fielded set, before selecting;}\\
+  && \text{fielded set, before selecting;}\\
 M_2 &= \tfrac{1}{|A_{i+1}|}\textstyle\sum_{j\in A_{i+1}} \tilde T_{ij}
-  && \text{score the newly selected set;}\\
+  && \text{newly selected set;}\\
 M_3 &= \mathrm{lat}(A_{i+1})
-  && \text{latent ground truth (simulation only).}
+  && \text{latent truth (simulation only).}
 \end{align}
 In $M_2$, $\tilde T_{ij}=T_{ij}$ for retained participants $j\in A_i\cap A_{i+1}$, and a
 fresh independent draw for newly promoted ones, who have no observation yet. $M_1$ is the
@@ -201,7 +223,7 @@ is the metric our own first-pass pipeline implemented. It looks reasonable: it r
 quality of the set the mechanism has just chosen. Its defect is that the choice has
 already consumed $T_{ij}$.
 
-\subsection{The bias is non-negative, and vanishes without a margin}
+\subsection{The bias, exactly: pivotality}
 Let $\mathcal H_i$ denote the history before the epoch-$i$ draws, including $A_i$ and all
 latent qualities. Write $N'=|A_{i+1}|$, which is fixed given $\mathcal H_i$, and
 $R_j=\mathbf 1\{j\in A_{i+1}\}$.
@@ -220,29 +242,53 @@ arriving later are initialised with a score, so this case does not recur.) Parti
 $j$'s score therefore rises at least as much as any competitor's, and its rank cannot fall.
 \end{proof}
 
-\begin{proposition}\label{prop:bias}
+Write $\epsilon_{ij}=T_{ij}-\tilde Q_j$ for the observation noise, and let
+\begin{equation}\label{eq:g}
+g(u)=\mathbb E\!\left[\epsilon\,\mathbf 1\{\epsilon>u\}\right],\qquad g(\pm\infty)=0 .
+\end{equation}
+
+\begin{theorem}[Pivotality]\label{thm:pivot}
+Let the $\epsilon_{ij}$ be independent of $\mathcal H_i$ and of each other, with mean zero,
+variance $V^2$ and a continuous distribution. Under the conditions of
+Lemma~\ref{lem:mono}, each $j\in A_i$ has a flip point $u_j\in[-\infty,\infty]$, a function
+of $\mathcal H_i$, the other draws $T_{i,-j}$ and the tie-breaking randomness, such that
+$R_j=\mathbf 1\{\epsilon_{ij}>u_j\}$ almost surely. Then
 $\mathbb E[M_1\mid\mathcal H_i]=\mathrm{lat}(A_i)$, and
 \begin{equation}\label{eq:bias}
-\mathbb E[M_2-M_3\mid\mathcal H_i]
-=\frac{1}{N'}\sum_{j\in A_i}\mathrm{Cov}\!\left(R_j,\,T_{ij}\mid\mathcal H_i\right)\;\ge\;0,
+\mathbb E[M_2-M_3\mid\mathcal H_i]=\frac{1}{N'}\sum_{j\in A_i}\mathbb E\!\left[g(u_j)\mid\mathcal H_i\right].
 \end{equation}
-with equality if and only if, almost surely, no retention decision depends on the
-participant's own draw.
-\end{proposition}
+The kernel $g$ is non-negative and vanishes exactly outside the interior of the support of
+$\epsilon$. It equals $V^2 f^\star$, where $f^\star$ is the density of the zero-bias
+transform of $\epsilon$~\cite{goldstein1997stein}; for Gaussian noise, $g(u)=V\varphi(u/V)$
+by Stein's lemma~\cite{stein1981estimation}.
+\end{theorem}
 \begin{proof}
 The first claim is linearity: given $\mathcal H_i$, each $T_{ij}$ has mean
 $\tilde Q_j$. For the second, $M_2-M_3=\frac1{N'}\sum_{j\in A_{i+1}}(\tilde T_{ij}-\tilde Q_j)$.
 A promoted participant's draw is independent of everything else and contributes zero in
-expectation. A participant $j\in A_i$ contributes $R_j(T_{ij}-\tilde Q_j)$, whose
-expectation is $\mathrm{Cov}(R_j,T_{ij}\mid\mathcal H_i)$. Condition further on
-$T_{i,-j}$ and the tie-breaking randomness. By Lemma~\ref{lem:mono}, $R_j$ is a
-non-decreasing function of the single variable $T_{ij}$. A non-decreasing function of a
-random variable is non-negatively correlated with it~\cite{esary1967association}, and the
-inequality is strict unless the function is a.s.\ constant. Since
-$\mathbb E[T_{ij}\mid\mathcal H_i,T_{i,-j}]=\tilde Q_j$ does not depend on the extra
-conditioning, the law of total covariance passes the inequality to
-$\mathrm{Cov}(R_j,T_{ij}\mid\mathcal H_i)$.
+expectation. A participant $j\in A_i$ contributes $R_j\epsilon_{ij}$. Condition on
+$\mathcal H_i$, $T_{i,-j}$ and the tie-breaking randomness. By Lemma~\ref{lem:mono}, $R_j$
+is then a non-decreasing $\{0,1\}$-valued function of $\epsilon_{ij}$ alone, so it is a step
+at some $u_j$; continuity makes the value at the step irrelevant. Since $\epsilon_{ij}$ is
+independent of the conditioning, $\mathbb E[R_j\epsilon_{ij}\mid\cdot]=g(u_j)$, and the tower
+property gives~\eqref{eq:bias}. Because $\mathbb E\epsilon=0$,
+$g(u)=-\mathbb E[\epsilon\,\mathbf 1\{\epsilon\le u\}]$ as well; the first form is
+non-negative for $u\ge0$ and the second for $u<0$, and both vanish only if $\epsilon>u$ or
+$\epsilon\le u$ almost surely. The zero-bias density is by definition
+$f^\star(u)=\mathbb E[\epsilon\,\mathbf 1\{\epsilon>u\}]/V^2$~\cite{goldstein1997stein},
+and for $\epsilon\sim\mathcal N(0,V^2)$,
+$\int_u^\infty x\,\varphi_V(x)\,dx=V^2\varphi_V(u)$.
 \end{proof}
+
+The sign is the ``optimistic choosing'' case of~\cite{shin2019bias}; Theorem~\ref{thm:pivot}
+turns it into a quantity. Each fielded
+participant contributes the noise kernel at its flip point, the draw at which its
+retention would change. A participant far from the margin has $|u_j|$ large and contributes
+almost nothing; one at the margin, $u_j\approx0$, contributes the most, $g(0)=V/\sqrt{2\pi}$
+for Gaussian noise. The bias is therefore the noise variance times how pivotal the fielded
+set is. It is non-negative, and it vanishes exactly when no flip point falls inside the
+noise support, which for unbounded noise means no participant is at the margin. The
+formula needs no assumption about the noise beyond a finite variance.
 
 Two consequences frame everything that follows. First, the bias is carried entirely by
 participants at the selection \emph{margin}, whose retention their own draw can flip. If
@@ -256,7 +302,7 @@ $0.059$ (Figure~\ref{fig:divergence}).
 
 \subsection{The bias scales with churn, and churn with $P$}
 \label{sec:churn}
-Proposition~\ref{prop:bias} leaves the magnitude open. Raising $P$ raises the imputed value
+Raising $P$ raises the imputed value
 credited to inactive participants, so more active participants sit at the margin each
 epoch and retention becomes more selective on $T_{ij}$. Pooling all $P$ values and all four
 pools, the bias is close to linear in the per-epoch churn rate $c$ (the fraction of the
@@ -268,16 +314,24 @@ M_2-M_1\approx 0.108\,c,\qquad R^2=0.874
 below $0.003$ and the metrics coincide. At $P=100\%$ the bias reaches $0.059$ in the fixed
 pool, larger than the mechanism's entire gain over random sortition there ($0.055$).
 
+Theorem~\ref{thm:pivot} explains the near-linearity. The evicted fraction of the fielded
+set is $\frac1{N}\sum_j F(u_j)$, with $F$ the noise distribution function, so when the
+active set keeps its size the bias is the churn rate times the mean noise deficit of the
+evicted, $\sum_j g(u_j)/\sum_j F(u_j)$. That deficit changes slowly with $P$, so the bias
+is close to proportional to churn. It is not a constant of selection, however: it depends on
+the noise level and law (Section~\ref{sec:when}).
+
 \subsection{The bias is not specific to percentile imputation}
-Proposition~\ref{prop:bias} needs only that retention be monotone in a participant's own
+Theorem~\ref{thm:pivot} needs only that retention be monotone in a participant's own
 observation. To check that the effect is general, we repeated the audit on a different
 mechanism class: an upper-confidence-bound rule~\cite{chen2013combinatorial} that ranks
 participants by their running-mean score plus $c\sqrt{\log t/n_j}$ and imputes nothing to
 inactive participants. Here the exploration constant $c$ drives turnover, as $P$ did.
 Over $c\in[0.02,2]$, $50$ seeds per point, the bias is positive at every setting in every
 pool, $M_1$ again matches latent truth, and the bias is linear in churn with slope $0.107$
-($R^2=0.91$), against $0.108$ for percentile sortition. The two mechanisms share nothing
-but the retention structure, yet the bias per unit of churn is the same. The damage again
+($R^2=0.91$), against $0.108$ for percentile sortition. The agreement is specific to these
+parameters rather than a law: at four times the noise the two slopes are $0.25$ and $0.28$
+(Table~\ref{tab:pivot}). The damage again
 follows turnover. Where $c$ drives churn, tuning it on $M_2$ selects far too much
 exploration: $c=2$ instead of $0.2$ in the fixed pool and $c=1$ instead of $0.2$ in the
 shrinking pool, forfeiting $24\%$ and $25\%$ of the rule's gain over random sortition.
@@ -285,7 +339,7 @@ Where churn stays low (growing pool: below $0.03$ at every $c$), the two metrics
 same $c$.
 
 \begin{figure}[t]\centering
-\includegraphics[width=\columnwidth]{../../paper_figs/fig1_metric_divergence.pdf}
+\includegraphics[width=\columnwidth]{figures/fig1_metric_divergence.pdf}
 \caption{Mean active-set quality against the replacement percentile ($50$ seeds per
 point). $M_1$ (score before selecting) and latent ground truth $M_3$ coincide; $M_2$
 (score the selected set) diverges as $P$ grows. Circles mark each curve's maximum. Shading
@@ -294,7 +348,7 @@ marks the $[20,40]\%$ range reported in~\cite{kruijssen2024}.}
 \end{figure}
 
 \begin{figure}[t]\centering
-\includegraphics[width=\columnwidth]{../../paper_figs/fig2_bias_churn.pdf}
+\includegraphics[width=\columnwidth]{figures/fig2_bias_churn.pdf}
 \caption{Left: the bias $M_2-M_1$ against per-epoch churn, pooled over all $P$ and all
 four pools, with a fit through the origin. Right: churn is driven by $P$, which is why the
 bias is correlated with the parameter under study.}
@@ -314,7 +368,8 @@ and deploys it obtains a true quality (measured by $M_1$) that forfeits $35$--$4
 mechanism's gain over random sortition. Because the optima in Table~\ref{tab:pstar} are
 chosen and scored on the same seeds, we replicated the comparison on the independent seeds
 of Section~\ref{sec:inversion}, using $P=70\%$ and the recommended $P$ from that grid.
-The forfeited share there is $33$--$44\%$.
+The forfeited share there is $33$--$44\%$, and in the larger experiment of
+Section~\ref{sec:when}, picked and scored on disjoint seeds, it is $34$--$50\%$.
 
 \begin{table}[t]\centering\small
 \caption{Quality-maximising $P$ under each metric ($50$ seeds per grid point), and the true
@@ -346,12 +401,90 @@ apparent advantage was therefore entirely an effect of running at a higher avera
 flattered by a metric that rewards turnover.
 
 \begin{figure}[t]\centering
-\includegraphics[width=\columnwidth]{../../paper_figs/fig3_ranking_inversion.pdf}
+\includegraphics[width=\columnwidth]{figures/fig3_ranking_inversion.pdf}
 \caption{Seven mechanisms scored on both metrics (evolving pool, $n=100$, 95\% CIs),
 relative to static $P=25\%$. The metric decides which mechanism appears best; the same
 inversion holds in all four pools.}
 \label{fig:inversion}
 \end{figure}
+
+% ===========================================================================
+\section{Predicting and Auditing the Bias}
+\label{sec:when}
+Theorem~\ref{thm:pivot} is exact in principle; here we test it quantitatively, use it to audit
+logged metrics, and find the conditions under which the bias matters. Each simulation records, every epoch,
+the flip point of every fielded participant and the predicted bias
+$\frac1{N'}\sum_j g(u_j)$. For UCB the flip point is exact, because a participant's draw
+moves only its own score. For percentile sortition the draw also moves the imputed
+percentile, by $O(1/N_{\mathrm{act}})$, and we neglect that term. We ran seven noise
+conditions (Gaussian with $V\in\{0.05,0.1,0.2,0.4\}$, and Laplace, uniform and Student-$t_5$
+noise with $V=0.2$), each over the full $P$ and $c$ grids in all four pools: $560$
+settings, $200$ seeds each, disjoint from every other experiment.
+
+\paragraph{Prediction.} The formula matches the measured bias across the whole range, from
+$0$ to $0.13$ (Figure~\ref{fig:pivot}, left), to a median relative error of $0.6\%$ where
+the bias exceeds $0.005$. For UCB, where it is exact, the prediction lies inside the
+measurement's $95\%$ interval in $96\%$ of $224$ settings, the nominal rate, with a largest
+relative error of $2.0\%$. For percentile sortition the neglected percentile term is
+detectable at $200$ seeds: the prediction is high in $90\%$ of settings, by a median
+$0.8\%$ and at most $9\%$.
+
+\paragraph{The slope is not universal.} The bias per unit of churn rises with the noise
+level, from $0.013$ at $V=0.05$ to $0.25$--$0.28$ at $V=0.4$, faster than $V$ itself, and at
+$V=0.2$ it ranges from $0.092$ (Laplace) to $0.120$ (uniform) with the noise law
+(Table~\ref{tab:pivot}). Percentile and UCB selection agree closely at $V=0.2$ and diverge
+at $V=0.4$, as the formula predicts from their different flip-point distributions.
+
+\paragraph{Audit.} The formula suggests a way to estimate the bias of a metric that was
+logged but cannot be rerun. Everything in it is available to an operator except latent
+quality: the flip points follow from the scores and the rule, and $V$ is identified by
+repeated observations of the same participant. Replacing $\tilde Q_j$ with the
+participant's own pre-epoch estimate, the audit recovers the bias of UCB, whose estimate is
+a running mean, to within $0.96$--$1.02$ of its true value in every setting where the bias
+exceeds $0.005$. For percentile sortition, whose EMA is pulled towards the imputed
+percentile, it is a rough guide ($0.76$--$1.70$, median $1.04$).
+
+\paragraph{When the bias matters.} Table~\ref{tab:shift} repeats the analysis of
+Table~\ref{tab:pstar} in every condition, now picking $P$ on $100$ seeds and scoring the
+loss on $100$ others. The damage is governed by the noise-to-spread ratio $V/\sigma_Q$
+(Figure~\ref{fig:pivot}, right). At $V/\sigma_Q\le1$ the two metrics pick nearly the same
+$P$ and tuning on $M_2$ costs at most $2\%$ of the gain. At the reference ratio of $2$ it
+costs $34$--$50\%$ ($23$--$66\%$ across noise laws), and at $4$ it costs $64$--$80\%$. UCB
+follows the same pattern at a smaller scale, from $0$--$1\%$ to up to $41\%$. The bias grows
+with the noise through $g$, while the cost of excess turnover is set by the spread of latent
+quality, and their ratio decides how far the optimum moves. Merit selection is most exposed
+precisely where it is most needed: when individual observations are much noisier than the
+differences between participants.
+
+\begin{figure*}[t]\centering
+\includegraphics[width=\textwidth]{figures/fig5_pivotality.pdf}
+\caption{Left: measured bias $M_2-M_3$ against the pivotality prediction of
+Theorem~\ref{thm:pivot}, $560$ settings ($200$ seeds each): four noise laws (markers), four
+Gaussian noise levels, percentile sortition (blue) and UCB (orange), four pools. Right:
+share of the gain over random selection forfeited by tuning on $M_2$, against the
+noise-to-spread ratio (Gaussian noise; thin lines are pools, thick lines their mean; tuned
+and scored on disjoint seeds).}
+\label{fig:pivot}
+\end{figure*}
+
+\begin{table}[t]\centering\small
+\caption{Bias per unit of churn (fit through the origin over all $P$ or $c$ and pools), and
+the share of settings whose pivotality prediction lies inside the measurement's $95\%$
+interval ($200$ seeds). The prediction is exact for UCB and neglects an $O(1/N_{\mathrm{act}})$
+term for percentile sortition.}
+\label{tab:pivot}
+\setlength{\tabcolsep}{4pt}
+\input{tables/pivot}
+\end{table}
+
+\begin{table}[t]\centering\small
+\caption{Percentile maximising $M_1$ $\to$ percentile maximising $M_2$, picked on $100$ seeds,
+and (in brackets) the share of the gain over random selection lost by deploying the
+$M_2$ pick, scored on $100$ disjoint seeds, in \%. $\sigma_Q=0.1$ throughout.}
+\label{tab:shift}
+\footnotesize\setlength{\tabcolsep}{1.6pt}
+\input{tables/shift}
+\end{table}
 
 % ===========================================================================
 \section{Volatility-Adaptive $P$ Is Equivalent to Fixed $P$}
@@ -445,7 +578,7 @@ $P_t$ costs a little and buys nothing. The adaptive component contributes nothin
 the average it induces.
 
 \begin{figure*}[t]\centering
-\includegraphics[width=\textwidth]{../../paper_figs/fig4_vams_meanP.pdf}
+\includegraphics[width=\textwidth]{figures/fig4_vams_meanP.pdf}
 \caption{All $23$ VAMS variants in four pools (sigmoid $k\times W$ grid: circles; other
 response curves: diamonds), scored on $M_1$ with $100$ paired seeds. Top: quality relative
 to fixed $P=25\%$ against realised mean $P_t$; the line is fixed $P$ from the sweep of
@@ -518,7 +651,7 @@ re-scored on $100$ disjoint seeds, paired; gains in units of $10^{-3}$. Every
 held-out interval lies inside $\pm\varepsilon=\pm5$ (TOST $p<0.002$), so all four are
 equivalent.}
 \label{tab:headroom}
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{2.5pt}
 \begin{tabular}{lrrrrr}
 \toprule
 Pool & const. & schedule & oracle & held-out & 95\% CI\\
@@ -562,7 +695,7 @@ for any study that evaluates a mechanism which selects agents on noisy observati
 epoch's work, before the selection rule has used those observations ($M_1$). If a
 post-selection quantity is needed, score it on fresh observations only. Any quantity that
 reuses the observations that drove a selection is conditioned on it
-(Proposition~\ref{prop:bias}).
+(Theorem~\ref{thm:pivot}).
 
 \paragraph{2. Check against latent truth.} In simulation the latent qualities are known,
 so computing $M_3$ costs one line of code. A disagreement between the reported metric and
@@ -587,6 +720,13 @@ advance and report two one-sided tests~\cite{lakens2017equivalence}. At $n=10$ s
 arm, a two-sample test has $80\%$ power only for $d\ge1.33$ ($1.51$ at $n=8$), so a non-significant
 result at that sample size is nearly uninformative in either direction.
 
+\paragraph{7. Audit what you cannot rerun.} A metric that was logged after selection can be
+audited without rerunning anything: compute each fielded participant's flip point from the
+logged scores and the rule, and average the noise kernel of Theorem~\ref{thm:pivot} at it,
+with latent quality replaced by the participant's own estimate. The audit is accurate when
+that estimate is unbiased (Section~\ref{sec:when}), and its size relative to the reported
+effect says whether a conclusion can survive the bias.
+
 % ===========================================================================
 \section{Discussion and Limitations}
 
@@ -608,8 +748,10 @@ mechanism class, and we evaluate that direction, under the protocol of
 Section~\ref{sec:protocol}, in separate work.
 
 \paragraph{Limitations.} All results are simulations in the model
-of~\cite{kruijssen2024}, with Gaussian observation noise and, except in the drift
-experiment, latent quality fixed for life. Proposition~\ref{prop:bias} requires retention to
+of~\cite{kruijssen2024}, with latent quality fixed for life except in the drift experiment.
+Theorem~\ref{thm:pivot} holds for any continuous noise law with finite variance, and we
+check it on four, but the size of the damage depends on the noise-to-spread ratio, which
+must be measured in each real system. Theorem~\ref{thm:pivot} requires retention to
 be monotone in a participant's own observation. This holds for top-$k$ selection on an EMA
 or on a mean plus a count-based bonus, but a rule that, for example, penalises a
 participant's own observed variance could violate it. The smallest effect size of interest,
@@ -620,13 +762,14 @@ report it as a case study of a general failure mode, not as an error in prior wo
 
 \section{Conclusion}
 
-Scoring a selected set with the observations that selected it produces a bias that is
-provably non-negative, grows with turnover, and therefore tracks any parameter that
-controls turnover. In merit-based sortition this bias moved the apparent optimal
+Scoring a selected set with the observations that selected it produces a bias equal to
+the noise variance times the pivotality of the fielded set. It is non-negative, grows with
+turnover, and therefore tracks any parameter that controls turnover; it is predictable to
+within a few percent, and auditable from logs. In merit-based sortition this bias moved the apparent optimal
 replacement percentile from $20$--$30\%$ to $70$--$85\%$, cost up to $48\%$ of the
 mechanism's benefit when acted on, and inverted the ranking of competing mechanisms. The
-same bias, at the same rate per unit of churn, appears in an unrelated bandit-style
-selection rule. Measured correctly, volatility-adaptive replacement is equivalent to a
+same bias appears in an unrelated bandit-style selection rule, and in both its damage grows
+with the ratio of observation noise to the spread of quality. Measured correctly, volatility-adaptive replacement is equivalent to a
 fixed percentile, because its control signal is estimator noise, and even a
 hindsight-tuned schedule gains less than half the equivalence margin. The remedy is simple and
 general: score before you select, and check against ground truth whenever you can.

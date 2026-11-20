@@ -62,10 +62,41 @@ for r, (th, thlab) in enumerate(THETAS):
             ax.set_title(lab, fontsize=8.5, color=INK)
         if c == 0:
             ax.set_ylabel(f"{thlab}\ngain vs tuned static\n(% of gap)", fontsize=8)
-fig.text(0.5, -0.02, "Filled: Holm-significant.  Grey ticks: equivalence margin $\\pm\\varepsilon$.  "
-         "Orange: bonus from a lifetime count; blue: uncertainty regrows with staleness.",
-         ha="center", fontsize=7.5, color=INK2)
+# legend lives in the LaTeX caption
 os.makedirs(OUT, exist_ok=True)
 for ext in ("pdf", "png"):
     fig.savefig(os.path.join(OUT, f"figB1_rule_vs_static.{ext}"))
 print("cells in figure:", sorted(F))
+
+
+# ------------------------------------------------------------------ Figure B2
+# Whitewashing defence, as the newcomer prior n0 grows (none = undefended D-UCB). One line per
+# pool x drift cell: colour = pool, line style = drift. (a) a=20% adversarial identities and
+# (b) honest pool, both as D-UCB's paired difference from percentile sortition (1e-3);
+# (c) adversaries' share of the active set at a=20%, thin lines = percentile sortition.
+A = json.load(open("paperB_attack_results.json"))
+N0 = [0, 1, 3, 10, 30, 100]; XS = [0.33, 1, 3, 10, 30, 100]
+fig, axs = plt.subplots(1, 3, figsize=(7.0, 2.45), constrained_layout=True)
+for cell, col, ls, lab in (("Fixed|0.0", C1, "-", "Fixed, no drift"),
+                           ("Fixed|0.02", C1, (0, (3, 2)), r"Fixed, $\theta=0.02$"),
+                           ("Evolving|0.0", C2, "-", "Evolving, no drift"),
+                           ("Evolving|0.02", C2, (0, (3, 2)), r"Evolving, $\theta=0.02$")):
+    q = A[cell]["quality"]; sh = A[cell]["adv_share"]
+    arm = lambda n: "ducb" if n == 0 else f"ducb+prior{n:g}"
+    d = lambda n, f: 1000 * (np.mean(q[f"{arm(n)}|{f}"]) - np.mean(q[f"static|{f}"]))
+    kw = dict(ls=ls, color=col, lw=1.4, marker="o", ms=2.8)
+    axs[0].plot(XS, [d(n, "0.2") for n in N0], label=lab, **kw)
+    axs[1].plot(XS, [d(n, "0.0") for n in N0], **kw)
+    axs[2].plot(XS, [100 * np.mean(sh[f"{arm(n)}|0.2"]) for n in N0], **kw)
+    axs[2].axhline(100 * np.mean(sh["static|0.2"]), ls=ls, color=col, lw=0.7, alpha=0.55)
+for a_, t in zip(axs, ("(a) 20% whitewashers", "(b) honest pool", "(c) adversaries in active set")):
+    a_.set_xscale("log"); a_.set_xticks(XS); a_.set_xticklabels(["none", "1", "3", "10", "30", "100"])
+    a_.minorticks_off(); a_.set_xlabel(r"newcomer prior $n_0$"); a_.set_title(t, fontsize=8.5)
+for a_ in axs[:2]:
+    a_.axhline(0, color=INK3, lw=0.8)
+axs[0].set_ylabel(r"D-UCB $-$ static ($10^{-3}$)"); axs[1].set_ylabel(r"D-UCB $-$ static ($10^{-3}$)")
+axs[2].set_ylabel("share (%)")
+axs[0].legend(loc="lower right", fontsize=6.5, handlelength=2.2)
+fig.savefig(os.path.join(OUT, "figB2_whitewashing.pdf")); fig.savefig(os.path.join(OUT, "figB2_whitewashing.png"))
+plt.close(fig)
+print("wrote figB2_whitewashing")

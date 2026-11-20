@@ -1,0 +1,19 @@
+\begin{tabular}{lrrrrrrrrrrrr}
+\toprule
+ & \multicolumn{3}{c}{Fixed, $\theta=0$} & \multicolumn{3}{c}{Evolving, $\theta=0$} & \multicolumn{3}{c}{Fixed, $\theta=0.02$} & \multicolumn{3}{c}{Evolving, $\theta=0.02$}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(lr){11-13}
+Rule & $a{=}0$ & $a{=}20\%$ & adv. & $a{=}0$ & $a{=}20\%$ & adv. & $a{=}0$ & $a{=}20\%$ & adv. & $a{=}0$ & $a{=}20\%$ & adv.\\
+\midrule
+static & 0.253 & 0.226 & 4.2 & 0.266 & 0.240 & 6.1 & 0.239 & 0.214 & 7.4 & 0.253 & 0.227 & 7.3\\
+\midrule
+UCB & \textbf{+3.6} & \underline{$-$34.5} & 27.7 & \textbf{+9.5} & \underline{$-$47.9} & 32.7 & \underline{$-$3.6} & \underline{$-$47.8} & 31.9 & \underline{$-$6.6} & \underline{$-$72.1} & 39.0\\
+SW-UCB & \textbf{+3.6} & \underline{$-$34.5} & 27.7 & \textbf{+9.4} & \underline{$-$60.8} & 37.5 & $-$0.5 & \underline{$-$30.2} & 23.9 & +0.1 & \underline{$-$41.6} & 27.1\\
+TS & \textbf{+3.4} & \underline{$-$20.2} & 19.3 & \textbf{+9.6} & \underline{$-$32.6} & 24.8 & +0.5 & \underline{$-$23.0} & 20.4 & \textbf{+2.0} & \underline{$-$37.3} & 25.6\\
+D-UCB & \textbf{+3.6} & \underline{$-$36.6} & 28.8 & \textbf{+8.5} & \underline{$-$36.1} & 26.5 & +0.7 & \underline{$-$22.0} & 20.3 & +1.2 & \underline{$-$37.3} & 25.7\\
+\quad $+\,n_0{=}1$ & \textbf{+3.6} & \underline{$-$35.9} & 28.5 & \textbf{+7.7} & \textbf{+8.1} & 4.7 & +0.7 & \underline{$-$4.4} & 10.5 & +0.4 & \textbf{+4.9} & 5.7\\
+\quad $+\,n_0{=}3$ & \textbf{+3.6} & \underline{$-$33.9} & 27.4 & \textbf{+6.3} & \textbf{+11.1} & 2.4 & +0.7 & +0.4 & 7.2 & +0.7 & \textbf{+7.6} & 3.8\\
+\quad $+\,n_0{=}10$ & \textbf{+3.6} & \underline{$-$7.0} & 11.5 & \textbf{+3.2} & \textbf{+9.8} & 1.6 & +0.7 & \textbf{+3.8} & 5.2 & $-$0.5 & \textbf{+9.0} & 2.8\\
+\quad $+\,n_0{=}30$ & \textbf{+3.6} & \textbf{+6.3} & 1.6 & $-$0.4 & \textbf{+7.9} & 1.5 & +0.7 & \textbf{+6.1} & 4.3 & $-$0.6 & \textbf{+10.3} & 2.6\\
+\quad $+\,n_0{=}100$ & \textbf{+3.6} & \textbf{+8.0} & 0.2 & $-$2.8 & \textbf{+4.2} & 1.8 & +0.7 & \textbf{+6.2} & 3.7 & $-$1.0 & \textbf{+8.4} & 2.6\\
+\bottomrule
+\end{tabular}

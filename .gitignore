@@ -13,3 +13,12 @@ paper/code/logs/*.log
 *.blg
 *.out
 paper/paper*/main.log
+
+# 2026-11-20: local backups made before git was attached here; the originals are in commit 15ce5c6
+paper/code/_pre_2026-11-20/
+paper/code/_staged_2026-11-20/
+*.bak_2026-11-20
+paper/code/logs/*.bak.json
+paper/paper*/build.log
+# unzipped copies of the Overleaf zips (the zips and PDFs in deliverables/ are tracked)
+deliverables/*_latex/
